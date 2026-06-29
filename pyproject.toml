@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "multi-timescale-learning"
+version = "0.1.0"
+description = "Multi-timescale learning engine for continual adaptation with nested memories and continuum memory systems."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Shree", email = "shree@example.com" }
+]
+dependencies = [
+  "numpy>=1.24",
+  "torch>=2.2",
+  "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "black>=24.0", "ruff>=0.4"]
+
+[project.urls]
+"Source" = "https://github.com/Enigma-cit/multi-timescale-learning"
+"Documentation" = "https://github.com/Enigma-cit/multi-timescale-learning/docs"
+
+[project.scripts]
+mtsl = "mtsl_engine.cli:main"
