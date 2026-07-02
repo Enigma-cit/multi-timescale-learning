@@ -20,13 +20,9 @@ def _detach_hidden(h):
     return h.detach()
 
 
-def _flatten_params(module: nn.Module) -> torch.Tensor:
-    return torch.cat([p.detach().reshape(-1) for p in module.parameters()])
-
-
-def _flatten_grads(module: nn.Module) -> torch.Tensor:
+def _flatten_grads_from_params(params) -> torch.Tensor:
     grads = []
-    for p in module.parameters():
+    for p in params:
         if p.grad is None:
             grads.append(torch.zeros_like(p).reshape(-1))
         else:
@@ -37,6 +33,10 @@ def _flatten_grads(module: nn.Module) -> torch.Tensor:
 class MultiTimescaleEngine(nn.Module):
     """
     Coupled recurrent + continuum-memory engine with a registered classifier head.
+
+    Important:
+    - base-model parameters are updated by the learned optimizer-memory rule,
+    - optimizer-memory parameters are NOT part of the target update vector.
     """
 
     def __init__(self, cfg: EngineConfig):
@@ -47,13 +47,25 @@ class MultiTimescaleEngine(nn.Module):
         self.continuum = ContinuumMemory(cfg.hidden_dim, cfg.hidden_dim, num_blocks=3)
         self.head = nn.Linear(cfg.hidden_dim, 2)
 
-        param_dim = sum(p.numel() for p in self.parameters())
+        # Define which parameters belong to the base model only.
+        base_params = list(self.recurrent.parameters()) \
+                    + list(self.continuum.parameters()) \
+                    + list(self.head.parameters())
+
+        self._base_param_shapes = [p.shape for p in base_params]
+        self._base_param_numels = [p.numel() for p in base_params]
+        self.base_param_dim = sum(self._base_param_numels)
 
         self.opt_memory = OptimizerMemory(
-            param_dim=param_dim,
+            param_dim=self.base_param_dim,
             hidden_dim=cfg.hidden_dim,
             surprise_threshold=cfg.surprise_threshold,
         )
+
+    def base_parameters(self):
+        yield from self.recurrent.parameters()
+        yield from self.continuum.parameters()
+        yield from self.head.parameters()
 
     def forward(self, x: torch.Tensor, h=None):
         core_out, h_next = self.recurrent(x, h)
@@ -86,7 +98,7 @@ def train_engine(cfg: EngineConfig, tcfg: TrainingConfig, device: str | None = N
 
         h = _detach_hidden(h)
 
-        x_seq = x.unsqueeze(1)  # [B, 1, D]
+        x_seq = x.unsqueeze(1)
         logits, h = engine(x_seq, h)
 
         loss = F.cross_entropy(logits, y)
@@ -96,29 +108,26 @@ def train_engine(cfg: EngineConfig, tcfg: TrainingConfig, device: str | None = N
         engine.zero_grad(set_to_none=True)
         loss.backward()
 
-        grad_vec = _flatten_grads(engine)
+        base_params = list(engine.base_parameters())
+        grad_vec = _flatten_grads_from_params(base_params)
 
-        expected_dim = engine.opt_memory.param_dim
-        if grad_vec.numel() != expected_dim:
+        if grad_vec.numel() != engine.opt_memory.param_dim:
             raise RuntimeError(
                 f"Gradient vector length {grad_vec.numel()} does not match "
-                f"OptimizerMemory dimension {expected_dim}"
+                f"OptimizerMemory dimension {engine.opt_memory.param_dim}"
             )
 
         update_vec = engine.opt_memory.step(grad_vec).detach()
 
         offset = 0
         with torch.no_grad():
-            for p in engine.parameters():
+            for p in base_params:
                 size = p.numel()
                 p_update = update_vec[offset:offset + size].view_as(p)
                 offset += size
 
-                use_update = False
+                # Minimal stable rule for now; later you can use parameter groups
                 if scheduler.should_update_short():
-                    use_update = True
-
-                if use_update:
                     p -= cfg.base_lr * p_update
 
         scheduler.advance()
