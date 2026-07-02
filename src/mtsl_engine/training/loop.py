@@ -10,14 +10,33 @@ from mtsl_engine.models.recurrent_core import RecurrentCore
 from mtsl_engine.data.streaming_datasets import RotatingGaussiansStream
 
 
+def _detach_hidden(h):
+    if h is None:
+        return None
+    if isinstance(h, tuple):
+        return tuple(v.detach() for v in h)
+    if isinstance(h, list):
+        return [v.detach() for v in h]
+    return h.detach()
+
+
+def _flatten_params(module: nn.Module) -> torch.Tensor:
+    return torch.cat([p.detach().reshape(-1) for p in module.parameters()])
+
+
+def _flatten_grads(module: nn.Module) -> torch.Tensor:
+    grads = []
+    for p in module.parameters():
+        if p.grad is None:
+            grads.append(torch.zeros_like(p).reshape(-1))
+        else:
+            grads.append(p.grad.reshape(-1))
+    return torch.cat(grads)
+
+
 class MultiTimescaleEngine(nn.Module):
     """
-    Full engine coupling:
-
-    - RecurrentCore: fast-timescale memory
-    - ContinuumMemory: short/medium/long memory stack
-    - OptimizerMemory: learned update memory
-    - Head: registered classifier head
+    Coupled recurrent + continuum-memory engine with a registered classifier head.
     """
 
     def __init__(self, cfg: EngineConfig):
@@ -29,6 +48,7 @@ class MultiTimescaleEngine(nn.Module):
         self.head = nn.Linear(cfg.hidden_dim, 2)
 
         param_dim = sum(p.numel() for p in self.parameters())
+
         self.opt_memory = OptimizerMemory(
             param_dim=param_dim,
             hidden_dim=cfg.hidden_dim,
@@ -43,16 +63,6 @@ class MultiTimescaleEngine(nn.Module):
         return logits, h_next
 
 
-def _flatten_grads(module: nn.Module) -> torch.Tensor:
-    grads = []
-    for p in module.parameters():
-        if p.grad is None:
-            grads.append(torch.zeros_like(p).view(-1))
-        else:
-            grads.append(p.grad.view(-1))
-    return torch.cat(grads)
-
-
 def train_engine(cfg: EngineConfig, tcfg: TrainingConfig, device: str | None = None):
     if device is None:
         device = cfg.device
@@ -64,8 +74,8 @@ def train_engine(cfg: EngineConfig, tcfg: TrainingConfig, device: str | None = N
         medium_every=cfg.medium_update_every,
         long_every=cfg.long_update_every,
     )
-    stream = RotatingGaussiansStream(dim=cfg.input_dim)
 
+    stream = RotatingGaussiansStream(dim=cfg.input_dim)
     h = None
     metrics = {"loss": [], "acc": []}
 
@@ -74,7 +84,9 @@ def train_engine(cfg: EngineConfig, tcfg: TrainingConfig, device: str | None = N
         x = x.to(device)
         y = y.to(device)
 
-        x_seq = x.unsqueeze(1)
+        h = _detach_hidden(h)
+
+        x_seq = x.unsqueeze(1)  # [B, 1, D]
         logits, h = engine(x_seq, h)
 
         loss = F.cross_entropy(logits, y)
@@ -85,6 +97,14 @@ def train_engine(cfg: EngineConfig, tcfg: TrainingConfig, device: str | None = N
         loss.backward()
 
         grad_vec = _flatten_grads(engine)
+
+        expected_dim = engine.opt_memory.param_dim
+        if grad_vec.numel() != expected_dim:
+            raise RuntimeError(
+                f"Gradient vector length {grad_vec.numel()} does not match "
+                f"OptimizerMemory dimension {expected_dim}"
+            )
+
         update_vec = engine.opt_memory.step(grad_vec).detach()
 
         offset = 0
@@ -94,11 +114,12 @@ def train_engine(cfg: EngineConfig, tcfg: TrainingConfig, device: str | None = N
                 p_update = update_vec[offset:offset + size].view_as(p)
                 offset += size
 
-                # You can later add parameter-group masks here based on scheduler.
-                p -= cfg.base_lr * p_update
+                use_update = False
+                if scheduler.should_update_short():
+                    use_update = True
 
-        if h is not None:
-            h = h.detach()
+                if use_update:
+                    p -= cfg.base_lr * p_update
 
         scheduler.advance()
 
