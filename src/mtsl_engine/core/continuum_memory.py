@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 
-class ContinuumMemory(nn.Module):
+class ContinuumMemory(nn.Module): 
     """
     Continuum memory block with short-, medium-, and long-timescale modules.
 
