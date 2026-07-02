@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 
-
+ 
 def plot_metrics(loss_list, acc_list, filename: str | None = None):
     fig, ax1 = plt.subplots(figsize=(7, 4))
     ax2 = ax1.twinx()
