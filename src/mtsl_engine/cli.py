@@ -3,7 +3,7 @@ from mtsl_engine.config import EngineConfig, TrainingConfig
 from mtsl_engine.training.loop import train_engine
 from mtsl_engine.training.evaluation import evaluate_engine
 
-
+ 
 def cmd_train(args: argparse.Namespace) -> None:
     cfg = EngineConfig(input_dim=args.input_dim, hidden_dim=args.hidden_dim)
     tcfg = TrainingConfig(
