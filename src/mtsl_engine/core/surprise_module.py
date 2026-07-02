@@ -1,6 +1,6 @@
 import torch
 
-
+ 
 def prediction_surprise(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     """
     Surprise based on prediction error.
