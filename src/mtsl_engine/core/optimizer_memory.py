@@ -4,7 +4,7 @@ import torch.nn as nn
 
 class OptimizerMemory(nn.Module):
     """
-    Optimizer-as-memory module.
+    Optimizer-as-memory module. 
 
     Maintains a learned momentum-like state m_t in the same flattened parameter
     space as the model parameters. The module predicts a gradient trend g_hat_t
