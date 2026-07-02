@@ -20,3 +20,4 @@ def evaluate_engine(engine, input_dim: int, num_batches: int = 100, batch_size: 
             total += batch_size
 
     return correct / total
+    
