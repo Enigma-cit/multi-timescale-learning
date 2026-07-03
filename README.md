@@ -1,11 +1,7 @@
 # multi-timescale-learning
 Multi-timescale learning engine for continual adaptation with nested memories and continuum memory systems.
 
-This repository implements a research-oriented multi-timescale learning engine
-for continual adaptation. It is inspired by the "nested learning" view where
-models are treated as collections of coupled optimization problems operating at
-different timescales, and by continuum memory systems with short-, medium-, and
-long-term memories.
+This repository implements a research-oriented multi-timescale learning engine for continual adaptation. It is inspired by the nested learning view, which treats models as coupled optimization processes operating at different temporal scales, and by biological evidence that learning and memory arise through multiple interacting time constants in neurons, synapses, and reinforcement signals. In particular, the design reflects the idea that fast processes capture short-lived context, intermediate processes support ongoing adaptation, and slow processes preserve stable long-term structure through continuum-style memory organization.
 
 ## Key Ideas
 
