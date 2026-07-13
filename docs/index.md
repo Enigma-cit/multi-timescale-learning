@@ -1,7 +1,7 @@
 # Multi-Timescale Learning Engine
 
 This documentation describes the components of `mtsl_engine`, a Python package
-for multi-timescale learning and continual adaptation.
+for multi-timescale learning and continual adaptation. 
 
 ## Modules
 
